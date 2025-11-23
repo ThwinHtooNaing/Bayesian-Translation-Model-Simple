@@ -2,4 +2,4 @@ streamlit==1.51.0
 numpy<2.0.0
 pandas==2.2.2
 pythainlp==3.0.2
-python-crfsuite==0.9.9
+python-crfsuite-redux
