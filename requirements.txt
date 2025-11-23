@@ -1,0 +1,4 @@
+streamlit==1.27.0
+numpy==1.27.0
+pandas==2.1.0
+pythainlp==3.0.2
