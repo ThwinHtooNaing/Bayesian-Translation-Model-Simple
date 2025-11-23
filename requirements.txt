@@ -1,5 +1,5 @@
 streamlit==1.51.0
-numpy==2.3.5
-pandas==2.3.3
+numpy<2.0.0
+pandas==2.2.2
 pythainlp==3.0.2
 python-crfsuite==0.9.9
