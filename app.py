@@ -4,8 +4,6 @@ import json
 import os
 import time
 
-# --- Import your custom modules ---
-# We use try-except to give helpful errors if files are missing
 try:
     from trainer import ThaiToEngTrainer
     from stack_decoder import StackDecoder, SimpleLanguageModel
@@ -28,28 +26,46 @@ if 'lm' not in st.session_state:
     st.session_state['lm'] = None
 if 'system_ready' not in st.session_state:
     st.session_state['system_ready'] = False
+if 'active_data_path' not in st.session_state:
+    st.session_state['active_data_path'] = "nus_sms.csv"  # Default
 
 # --- Helper Functions ---
-def load_system():
-    """Loads the weights and initializes the decoder"""
+def save_uploaded_file(uploaded_file):
+    """Saves uploaded file to disk so the Trainer class can read it path-wise"""
+    try:
+        file_path = "temp_custom_data.csv"
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        return file_path
+    except Exception as e:
+        st.error(f"Error saving file: {e}")
+        return None
+
+def load_system(data_path):
+    """Loads the weights and initializes the decoder using specific data for LM"""
     model_path = "model_weights_th_en.json"
-    data_path = "nus_sms.csv"
 
     if not os.path.exists(model_path):
         return False, "Model weights not found. Please train the model first."
     
     if not os.path.exists(data_path):
-        return False, "Dataset (nus_sms.csv) not found."
+        return False, f"Dataset ({data_path}) not found."
 
     # 1. Load TM
-    with open(model_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-        tm_weights = data.get("translation", {})
+    try:
+        with open(model_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            tm_weights = data.get("translation", {})
+    except Exception as e:
+        return False, f"Error loading JSON weights: {e}"
 
-    # 2. Train LM
-    lm = SimpleLanguageModel()
-    lm.train(data_path)
-    st.session_state['lm'] = lm
+    # 2. Train LM (Language Model needs the corpus to build n-grams)
+    try:
+        lm = SimpleLanguageModel()
+        lm.train(data_path)
+        st.session_state['lm'] = lm
+    except Exception as e:
+        return False, f"Error initializing Language Model with {data_path}: {e}"
 
     # 3. Init Decoder
     st.session_state['decoder'] = StackDecoder(
@@ -61,45 +77,73 @@ def load_system():
     )
     
     st.session_state['system_ready'] = True
-    return True, "System Loaded Successfully!"
+    return True, f"System Loaded Successfully using {data_path}!"
 
-def train_system(iterations_m1, iterations_m2):
-    """Runs the EM training pipeline"""
-    data_path = "nus_sms.csv"
+def train_system(iterations_m1, iterations_m2, data_path):
+    """Runs the EM training pipeline on the specific data path"""
     if not os.path.exists(data_path):
-        return False, "Dataset not found."
+        return False, f"Dataset {data_path} not found."
 
-    trainer = ThaiToEngTrainer()
-    trainer.load_data(data_path)
-    trainer.initialize_uniform()
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    try:
+        trainer = ThaiToEngTrainer()
+        # Ensure your trainer.py accepts a path in load_data
+        trainer.load_data(data_path) 
+        trainer.initialize_uniform()
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
-    # Model 1 Training
-    total_steps = iterations_m1 + iterations_m2
-    current_step = 0
+        # Model 1 Training
+        total_steps = iterations_m1 + iterations_m2
+        current_step = 0
 
-    status_text.text("Training IBM Model 1 (Lexical)...")
-    # We can't easily hook into the loop inside trainer without modifying it, 
-    # so we just run it in blocks or modify trainer. For now, we run it directly.
-    trainer.train_model1(iterations=iterations_m1)
-    current_step += iterations_m1
-    progress_bar.progress(current_step / total_steps)
+        status_text.text("Training IBM Model 1 (Lexical)...")
+        trainer.train_model1(iterations=iterations_m1)
+        current_step += iterations_m1
+        progress_bar.progress(current_step / total_steps)
 
-    # Model 2 Training
-    status_text.text("Training IBM Model 2 (Alignment)...")
-    trainer.train_model2(iterations=iterations_m2)
-    progress_bar.progress(1.0)
-    
-    trainer.save_model("model_weights_th_en.json")
-    status_text.text("Training Complete. Saved to model_weights_th_en.json")
-    return True, "Training finished!"
+        # Model 2 Training
+        status_text.text("Training IBM Model 2 (Alignment)...")
+        trainer.train_model2(iterations=iterations_m2)
+        progress_bar.progress(1.0)
+        
+        trainer.save_model("model_weights_th_en.json")
+        status_text.text("Training Complete. Saved to model_weights_th_en.json")
+        return True, "Training finished!"
+    except Exception as e:
+        return False, f"Training Error: {e}"
 
 # --- Sidebar UI ---
 with st.sidebar:
-    st.title("⚙️ Control Panel")
+    st.title("Control Panel")
+
+    # --- Dataset Selection Section ---
+    st.subheader("📁 Dataset Configuration")
+    data_source = st.radio(
+        "Select Training Data:",
+        ("Default (nus_sms.csv)", "Upload Custom CSV")
+    )
+
+    if data_source == "Upload Custom CSV":
+        uploaded_file = st.file_uploader("Upload CSV (Must have 'Thai' and 'English' cols)", type=['csv'])
+        if uploaded_file is not None:
+            saved_path = save_uploaded_file(uploaded_file)
+            if saved_path:
+                st.session_state['active_data_path'] = saved_path
+                st.success(f"Using: {uploaded_file.name}")
+        else:
+            st.warning("Please upload a file.")
+            # Fallback prevents crash if they switch mode but don't upload
+            if st.session_state['active_data_path'] == "nus_sms.csv":
+                st.session_state['active_data_path'] = "nus_sms.csv"
+    else:
+        st.session_state['active_data_path'] = "nus_sms.csv"
+
+    st.info(f"Active Dataset: `{st.session_state['active_data_path']}`")
+
+    st.markdown("---")
     
+    # --- Status Section ---
     st.subheader("System Status")
     if st.session_state['system_ready']:
         st.success("🟢 System Ready")
@@ -107,26 +151,30 @@ with st.sidebar:
         st.warning("🔴 Not Loaded")
 
     st.markdown("---")
+    
+    # --- Training Controls ---
     st.subheader("Training Controls")
     iter_m1 = st.number_input("Model 1 Iterations", min_value=1, value=10)
     iter_m2 = st.number_input("Model 2 Iterations", min_value=1, value=5)
     
     if st.button("Train New Model", type="primary"):
-        with st.spinner("Training in progress... (Check console for logs)"):
-            success, msg = train_system(iter_m1, iter_m2)
+        with st.spinner(f"Training on {st.session_state['active_data_path']}..."):
+            success, msg = train_system(iter_m1, iter_m2, st.session_state['active_data_path'])
             if success:
                 st.success(msg)
                 # Auto-load after training
-                load_system()
+                load_system(st.session_state['active_data_path'])
+                time.sleep(1) # Give user time to read success msg
                 st.rerun()
             else:
                 st.error(msg)
 
     st.markdown("---")
     if st.button("Reload System"):
-        success, msg = load_system()
+        success, msg = load_system(st.session_state['active_data_path'])
         if success:
             st.success(msg)
+            time.sleep(1)
             st.rerun()
         else:
             st.error(msg)
@@ -136,12 +184,12 @@ st.title("🇹🇭 Bayesian Thai-English Translator")
 st.markdown("Using **IBM Model 2** (Likelihood) + **Bigram Language Model** (Prior) + **Multi-Stack Decoding**.")
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["💬 Translate", "📊 Model Weights", "📂 Dataset"])
+tab1, tab2, tab3 = st.tabs(["Translate", "Model Weights", "Current Dataset"])
 
 # TAB 1: TRANSLATION
 with tab1:
     if not st.session_state['system_ready']:
-        st.info("👈 Please **Train** or **Load** the system from the sidebar to start.")
+        st.info(" Please **Train** or **Load** the system from the sidebar to start.")
     else:
         col1, col2 = st.columns([1, 1])
         
@@ -149,7 +197,7 @@ with tab1:
             st.subheader("Input (Thai)")
             thai_input = st.text_area("Enter Thai text here:", height=150, placeholder="สวัสดีครับ...")
             
-            if st.button("Translate 🚀", type="primary", use_container_width=True):
+            if st.button("Translate", type="primary", use_container_width=True):
                 if thai_input.strip():
                     with st.spinner("Decoding..."):
                         start_time = time.time()
@@ -180,7 +228,7 @@ with tab1:
             else:
                 st.markdown("*Translation will appear here.*")
 
-# TAB 2: MODEL INSPECTION
+# TAB 2: WEIGHTS
 with tab2:
     st.header("Inspect Learned Weights")
     
@@ -193,7 +241,6 @@ with tab2:
                 tm = model_data.get("translation", {})
             
             # Convert to DataFrame for display
-            # Structure: Thai -> {Eng: Prob}
             flat_data = []
             for thai_word, eng_map in tm.items():
                 for eng_word, prob in eng_map.items():
@@ -204,7 +251,7 @@ with tab2:
             # Filter
             search_term = st.text_input("Search for a Thai word:", "")
             if search_term:
-                df_weights = df_weights[df_weights['Thai'].str.contains(search_term)]
+                df_weights = df_weights[df_weights['Thai'].str.contains(search_term, na=False)]
             
             st.dataframe(
                 df_weights.sort_values(by="Probability", ascending=False), 
@@ -217,10 +264,21 @@ with tab2:
 
 # TAB 3: DATASET
 with tab3:
-    st.header("Training Data")
-    if os.path.exists("nus_sms.csv"):
-        df = pd.read_csv("nus_sms.csv")
-        st.dataframe(df, use_container_width=True)
-        st.write(f"Total sentences: {len(df)}")
+    current_path = st.session_state.get('active_data_path', 'nus_sms.csv')
+    st.header(f"Dataset Preview: {current_path}")
+    
+    if os.path.exists(current_path):
+        try:
+            df = pd.read_csv(current_path)
+            st.dataframe(df, use_container_width=True)
+            st.write(f"**Total sentences:** {len(df)}")
+            
+            # Validation Check
+            cols = [c.lower() for c in df.columns]
+            # Assumes trainer expects specific columns, usually implicit or index based, 
+            # but good to visually check.
+            st.caption("Note: Ensure your CSV has columns that match what 'trainer.py' expects (usually 'Thai' and 'English').")
+        except Exception as e:
+            st.error(f"Error reading CSV: {e}")
     else:
-        st.warning("nus_sms.csv not found.")
+        st.warning(f"File not found: {current_path}")

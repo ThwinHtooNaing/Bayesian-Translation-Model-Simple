@@ -2,9 +2,6 @@ import json
 import os
 import time
 
-# Import the components from your previous files
-# Note: Ensure trainer.py contains ThaiToEngTrainer
-# Note: Ensure stack_decoder.py contains StackDecoder and SimpleLanguageModel
 try:
     from trainer import ThaiToEngTrainer
     from stack_decoder import StackDecoder, SimpleLanguageModel
@@ -46,15 +43,11 @@ class BayesianTranslator:
         trainer.train_model2(iterations=iterations_m2)
         print(f"Training finished in {time.time() - start_time:.2f} seconds.")
 
-        # Save P(F|E) weights
         trainer.save_model(self.model_file)
         print(f"Translation probabilities saved to {self.model_file}")
 
     def load_system(self):
-        """
-        Loads the trained TM weights and trains the LM on the fly 
-        (LM training is usually fast enough to not need saving).
-        """
+       
         print("\n" + "="*40)
         print("PHASE 2: Initializing Bayesian Decoder")
         print("="*40)
@@ -73,72 +66,60 @@ class BayesianTranslator:
         print("Training LM (Prior) from corpus...")
         self.lm = SimpleLanguageModel()
         self.lm.train(self.data_file)
-
-        # 3. Initialize Stack Decoder
-        # The Decoder combines Prior * Likelihood
+       
         print("Initializing Stack Decoder...")
         self.decoder = StackDecoder(
             model_weights=tm_weights,
             lm_bigrams=self.lm.bigrams,
             lm_unigrams=self.lm.unigrams,
-            beam_width=20,  # Higher beam = more accurate, slower
-            top_k_tm=10     # Consider top 10 translations for every Thai word
+            beam_width=20, 
+            top_k_tm=10    
         )
         
         return True
 
     def translate(self, thai_text):
-        """
-        Performs the Bayesian inference:
-        argmax_E  P(E) * P(F|E)
-        """
+        
         if not self.decoder:
             print("Error: System not loaded.")
             return "SYSTEM_ERROR"
 
-        # Decode
+       
         tokens, score = self.decoder.decode(thai_text)
         
-        # Format output
         translation = " ".join(tokens)
         
-        # For debug purposes, we can return the raw score (log probability)
         return translation, score
 
-if __name__ == "__main__":
-    import sys
+# if __name__ == "__main__":
+#     import sys
 
-    # Create the orchestrator
-    bayes_sys = BayesianTranslator(data_file="nus_sms.csv")
+#     bayes_sys = BayesianTranslator(data_file="nus_sms.csv")
 
-    # Command Line Arguments for flexibility
-    if len(sys.argv) > 1 and sys.argv[1] == "--train":
-        bayes_sys.train_system()
-    elif not os.path.exists("model_weights_th_en.json"):
-        # Auto-train if model missing
-        print("Model weights not found. Starting training automatically...")
-        bayes_sys.train_system()
-
-    # Load the system
-    success = bayes_sys.load_system()
+#     if len(sys.argv) > 1 and sys.argv[1] == "--train":
+#         bayes_sys.train_system()
+#     elif not os.path.exists("model_weights_th_en.json"):
+#         print("Model weights not found. Starting training automatically...")
+#         bayes_sys.train_system()
+#     success = bayes_sys.load_system()
     
-    if success:
-        print("\n" + "="*40)
-        print("      BAYESIAN TRANSLATOR READY      ")
-        print("      (Thai -> English)              ")
-        print("="*40)
-        print("Type 'quit' to exit.\n")
+#     if success:
+#         print("\n" + "="*40)
+#         print("      BAYESIAN TRANSLATOR READY      ")
+#         print("      (Thai -> English)              ")
+#         print("="*40)
+#         print("Type 'quit' to exit.\n")
 
-        while True:
-            user_input = input("Enter Thai sentence: ")
-            if user_input.lower() in ["quit", "exit", "q"]:
-                break
+#         while True:
+#             user_input = input("Enter Thai sentence: ")
+#             if user_input.lower() in ["quit", "exit", "q"]:
+#                 break
             
-            if not user_input.strip():
-                continue
+#             if not user_input.strip():
+#                 continue
 
-            trans, log_prob = bayes_sys.translate(user_input)
+#             trans, log_prob = bayes_sys.translate(user_input)
             
-            print(f"Translation : {trans}")
-            print(f"Log Prob    : {log_prob:.4f}")
-            print("-" * 30)
+#             print(f"Translation : {trans}")
+#             print(f"Log Prob    : {log_prob:.4f}")
+#             print("-" * 30)

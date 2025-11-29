@@ -73,9 +73,6 @@ class ThaiToEngTrainer:
             for e_word in e_map:
                 self.t[t_word][e_word] = 1.0 / total
 
-    # ==========================================
-    # STEP 1: Train IBM Model 1 (Lexical Only)
-    # ==========================================
     def train_model1(self, iterations=10):
         print(f"\n--- Training IBM Model 1 ({iterations} iterations) ---")
 
@@ -84,7 +81,7 @@ class ThaiToEngTrainer:
             total_t = collections.defaultdict(float) # Total counts for Source (Thai)
 
             for t_sent, e_sent in self.sentences:
-                # t_sent = Source (Thai), e_sent = Target (English)
+                
                 
                 for e_word in e_sent:
                     # Calculate Normalization Factor Z (Sum over Source/Thai)
@@ -97,15 +94,12 @@ class ThaiToEngTrainer:
                         count[(t_word, e_word)] += delta
                         total_t[t_word] += delta
 
-            # M-step: Update Probabilities P(eng|thai)
             for (t_word, e_word), val in count.items():
                 self.t[t_word][e_word] = val / total_t[t_word]
 
             print(f"Model 1 Iteration {it+1} complete.")
 
-    # ==========================================
-    # STEP 2: Train IBM Model 2 (Lexical + Alignment)
-    # ==========================================
+
     def train_model2(self, iterations=10):
         print(f"\n--- Training IBM Model 2 ({iterations} iterations) ---")
 
@@ -146,24 +140,19 @@ class ThaiToEngTrainer:
                         count_a[(j, i, l, m)] += delta
                         total_a[(i, l, m)] += delta
 
-            # Update lexical translation probabilities P(eng|thai)
             for (t_word, e_word), val in count_t.items():
                 self.t[t_word][e_word] = val / total_t[t_word]
 
-            # Update alignment probabilities
             for (j, i, l, m), val in count_a.items():
                 self.a[(i, l, m)][j] = val / total_a[(i, l, m)]
 
             print(f"Model 2 Iteration {it+1} complete.")
 
     def get_best_translation(self, thai_word):
-        # Look up Thai word to find best English matches
         if thai_word not in self.t:
             return "UNKNOWN"
-
-        # Sort by probability descending
         candidates = sorted(self.t[thai_word].items(), key=lambda x: x[1], reverse=True)
-        return candidates[0] # Returns ('english_word', probability)
+        return candidates[0] 
 
     def save_model(self, filename="model_weights_th_en.json"):
         cleaned_t = {}
@@ -180,7 +169,6 @@ class ThaiToEngTrainer:
 if __name__ == "__main__":
     trainer = ThaiToEngTrainer()
     
-    # Make sure your CSV has 'th_text' and 'en_text' headers
     trainer.load_data("nus_sms.csv")
     
     trainer.initialize_uniform()
